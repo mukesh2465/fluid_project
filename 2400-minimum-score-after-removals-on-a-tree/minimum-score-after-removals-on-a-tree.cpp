@@ -1,64 +1,71 @@
 class Solution {
 public:
-    std::vector<int> subtree_xor;
-    std::vector<std::vector<int>> adj;
-    std::vector<int> tin, tout;
-    int timer;
-    void dfs(int u, int p, const std::vector<int>& nums) {
-        tin[u] = ++timer;
-        subtree_xor[u] = nums[u];
-        for (int v : adj[u]) {
-            if (v != p) {
-                dfs(v, u, nums);
-                subtree_xor[u] ^= subtree_xor[v];
+    //dfs to compute in/out time n subtree Xor
+    void dfs(int node,int parent,vector<int>&subtreeXor,vector<int>&inTime,vector<int>&outTime,int&time,vector<int>& nums,unordered_map<int,vector<int>>&adj){
+        subtreeXor[node]=nums[node];//initially, XOR is the node's own value
+        inTime[node]=time;//store time when entering that node
+        time++;
+        for(int&neigh:adj[node]){//go over all neighs
+            //visit children
+            if(neigh!=parent){
+                dfs(neigh,node,subtreeXor,inTime,outTime,time,nums,adj);
+                // XOR frm all child subtrees
+                subtreeXor[node]=subtreeXor[node]^subtreeXor[neigh];
             }
         }
-        tout[u] = ++timer;
+        outTime[node]=time;//store time when exiting that node
+        time++;
     }
-    bool is_ancestor(int u, int v) {
-        return tin[u] <= tin[v] && tout[u] >= tout[v];
+    //check if u is an ancestor of v using Euler Tour technique
+    bool isAncestor(int u,int v,vector<int>&inTime,vector<int>&outTime){
+        return inTime[v]>=inTime[u] && outTime[v]<=outTime[u];
     }
-    int minimumScore(std::vector<int>& nums, std::vector<std::vector<int>>& edges) {
-        int n = nums.size();
-        adj.assign(n, {});
-        subtree_xor.assign(n, 0);
-        tin.assign(n, 0);
-        tout.assign(n, 0);
-        timer = 0;
-        for (const auto& edge : edges) {
-            adj[edge[0]].push_back(edge[1]);
-            adj[edge[1]].push_back(edge[0]);
+    // Score fnc = max - min of 3 xors
+    int getScore(int a,int b,int c){
+        int maxXor=max({a,b,c});
+        int minXor=min({a,b,c});
+        return maxXor-minXor;
+    }
+    int minimumScore(vector<int>& nums, vector<vector<int>>& edges) {
+        int n=nums.size();
+        unordered_map<int,vector<int>> adj;
+        for(auto &e:edges){
+            int u=e[0]; int v=e[1];
+            adj[u].push_back(v);
+            adj[v].push_back(u);
         }
-        dfs(0, -1, nums);
-        int total_xor = subtree_xor[0];
-        int min_score_diff = INT_MAX;
-        for (int i = 0; i < edges.size(); ++i) {
-            for (int j = i + 1; j < edges.size(); ++j) {
-                int u1 = edges[i][0], v1 = edges[i][1];
-                int u2 = edges[j][0], v2 = edges[j][1];
-                if (tin[u1] > tin[v1]) std::swap(u1, v1);
-                if (tin[u2] > tin[v2]) std::swap(u2, v2);
-                int child1 = v1;
-                int child2 = v2;
-                int score1, score2, score3;
-                if (is_ancestor(child1, child2)) {
-                    score1 = subtree_xor[child2];
-                    score2 = subtree_xor[child1] ^ subtree_xor[child2];
-                    score3 = total_xor ^ subtree_xor[child1];
-                } else if (is_ancestor(child2, child1)) {
-                    score1 = subtree_xor[child1];
-                    score2 = subtree_xor[child2] ^ subtree_xor[child1];
-                    score3 = total_xor ^ subtree_xor[child2];
-                } else {
-                    score1 = subtree_xor[child1];
-                    score2 = subtree_xor[child2];
-                    score3 = total_xor ^ score1 ^ score2;
+        vector<int> subtreeXor(n,0);//subtreeXor[i] = XOR of values in subtree rooted at i
+        //store time we reach that node in dfs call
+        vector<int> inTime(n,0);//inTime[i] = time when DFS enters node i
+        vector<int> outTime(n,0);//outTime[i] = time when DFS exits node i
+        int time=0;
+        //dfs start frm root=0,parent=-1 to fill in subtree XORs and Euler tour timings
+        dfs(0,-1,subtreeXor,inTime,outTime,time,nums,adj);
+        int res=INT_MAX;
+        //go for all possible pair of nodes n explore them
+        // Try all pairs (u, v) where u, v are nodes != root (0)
+        for(int u=1;u<n;u++){
+            for(int v=u+1;v<n;v++){
+                int xor1; int xor2; int xor3;
+                //is u an ancestor of v
+                if(isAncestor(u,v,inTime,outTime)){//so get xor of(v) first
+                // then u's xor well get frm xor of v w itslef
+                    xor1=subtreeXor[v];//xor of v's subtree
+                    xor2=subtreeXor[u]^subtreeXor[v];//u's subtree minus v
+                    xor3=subtreeXor[0]^xor1^xor2;//3rd component -root^xor(l subtre)^r subtee
+                }else if(isAncestor(v,u,inTime,outTime)){//v is ancestor of u 
+                    xor1=subtreeXor[u];//xor of u's subtree
+                    xor2=subtreeXor[v]^subtreeXor[u];//v's subtree minus u
+                    xor3=subtreeXor[0]^xor1^xor2;
+                }else{
+                    xor1=subtreeXor[u];
+                    xor2=subtreeXor[v];
+                    xor3=subtreeXor[0]^xor1^xor2;
                 }
-                int max_val = std::max({score1, score2, score3});
-                int min_val = std::min({score1, score2, score3});
-                min_score_diff = std::min(min_score_diff, max_val - min_val);
+                //update res w min score
+                res=min(res,getScore(xor1,xor2,xor3));
             }
         }
-        return min_score_diff;
+        return res;
     }
 };
